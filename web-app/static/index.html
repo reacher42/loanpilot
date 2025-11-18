@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="lofi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="version" content="1.0.0-web">
+  <title>Non-QM Loan Advisor - Web</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.css" rel="stylesheet" type="text/css" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <style>
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.5s infinite;
+    }
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60% { content: '...'; }
+      80%, 100% { content: ''; }
+    }
+  </style>
+</head>
+<body class="bg-base-100">
+  <!-- Header -->
+  <div class="border-b border-base-300 px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Non-QM Loan Advisor</h1>
+        <p class="text-base-content/60">AI-powered loan program matching system</p>
+      </div>
+      <div class="space-x-2">
+        <button class="btn btn-ghost btn-sm" onclick="clearBorrowerForm()">Clear</button>
+        <button class="btn btn-outline btn-sm" onclick="loadSampleProfile()">Load Sample</button>
+        <button class="btn btn-primary btn-sm" onclick="runLoanMatching()">Match</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="p-6">
+    <!-- Borrower Filters -->
+    <div class="mb-6">
+      <h2 class="text-lg font-semibold mb-4">Borrower Profile</h2>
+
+      <form id="borrowerForm" onsubmit="return false;">
+
+        <!-- Primary Fields Row -->
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 mb-3">
+          <div class="form-control">
+            <label class="label label-text">Credit Score</label>
+            <input type="number" name="creditScore" placeholder="680" min="300" max="850"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">Loan Amount</label>
+            <input type="number" name="loanAmount" placeholder="500000" min="50000"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">LTV %</label>
+            <input type="number" name="ltv" placeholder="75" min="1" max="100" step="0.1"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">DTI %</label>
+            <input type="number" name="dti" placeholder="42" min="1" max="100" step="0.1"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">Transaction Type</label>
+            <select name="transactionType" class="select select-bordered">
+              <option value="">Select type</option>
+              <option value="Purchase">Purchase</option>
+              <option value="Rate & Term">Rate & Term</option>
+              <option value="Cash Out">Cash Out</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">Income Type</label>
+            <select name="incomeType" class="select select-bordered">
+              <option value="">Select documentation</option>
+              <option value="2 years + YTD">2 years + YTD</option>
+              <option value="1 year + YTD">1 year + YTD</option>
+              <option value="No tax / income returns">No tax returns</option>
+              <option value="1099s Only">1099s Only</option>
+              <option value="P&L + 1 year tax returns">P&L + 1 year tax</option>
+              <option value="No Ratio / Asset Qualifier">Asset Qualifier</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Secondary Fields Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div class="form-control">
+            <label class="label label-text">Reserves (Months)</label>
+            <input type="number" name="reserves" placeholder="6" min="0" max="60"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control" id="cashOutField" style="display: none;">
+            <label class="label label-text">Cash Out Amount</label>
+            <input type="number" name="cashOutAmount" placeholder="50000" min="0"
+                   class="input input-bordered">
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">Occupancy</label>
+            <select name="occupancy" class="select select-bordered">
+              <option value="">Select occupancy</option>
+              <option value="Owner Occupied">Owner Occupied</option>
+              <option value="Second Home">Second Home</option>
+              <option value="Investment">Investment</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label label-text">Citizenship</label>
+            <select name="citizenship" class="select select-bordered">
+              <option value="">Select citizenship</option>
+              <option value="US Citizen">US Citizen</option>
+              <option value="Permanent Resident">Permanent Resident</option>
+              <option value="Non-Permanent Resident">Non-Permanent Resident</option>
+              <option value="Foreign National">Foreign National</option>
+            </select>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Bottom Section: 2-Column Layout for Query Interface and Results -->
+    <div class="grid grid-cols-2 gap-6">
+      <!-- Left Column: LoanPilot -->
+      <div class="border border-base-300 rounded-lg">
+        <div class="border-b border-base-300 p-4">
+          <h2 class="text-lg font-semibold">LoanPilot</h2>
+          <p class="text-xs text-base-content/60 mt-1">
+            I can assist you in matching providers with borrower profiles
+          </p>
+        </div>
+
+        <div class="p-4">
+          <!-- Query History -->
+          <div id="queryHistory" class="space-y-3 mb-4 overflow-y-auto" style="height: 300px; min-height: 300px; max-height: 300px;">
+            <div class="alert alert-info text-xs">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <div class="font-semibold">Query Examples:</div>
+                <ul class="list-disc list-inside mt-1 text-xs">
+                  <li>find all parameters for PRMG/Prime Connect</li>
+                  <li>show borrower_credit_score in Prime programs</li>
+                  <li>match programs for 680 credit score</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Query Input -->
+          <div class="border-t border-base-300 pt-4" style="min-height: 180px;">
+            <form id="queryForm"
+                  hx-post="/api/query/execute"
+                  hx-target="#queryHistory"
+                  hx-swap="beforeend"
+                  hx-indicator="#queryLoader"
+                  class="space-y-2">
+
+              <div class="flex gap-2">
+                <input type="text"
+                       name="query"
+                       placeholder="your query here..."
+                       class="input input-bordered flex-1 font-mono text-sm"
+                       required>
+                <button type="submit" class="btn btn-primary">Execute</button>
+              </div>
+
+              <!-- Quick Query Templates -->
+              <div class="flex gap-1 flex-wrap">
+                <button type="button" class="btn btn-xs btn-ghost"
+                        onclick="document.querySelector('[name=query]').value='find all parameters for PRMG/Prime Connect'">
+                  Find Params
+                </button>
+                <button type="button" class="btn btn-xs btn-ghost"
+                        onclick="document.querySelector('[name=query]').value='show programs in Prime'">
+                  List Programs
+                </button>
+                <button type="button" class="btn btn-xs btn-ghost"
+                        onclick="clearQueryHistory()">
+                  Clear History
+                </button>
+                <button type="button" class="btn btn-xs btn-ghost"
+                        hx-get="/api/query/scripts"
+                        hx-target="#queryHistory"
+                        hx-swap="innerHTML">
+                  Available Scripts
+                </button>
+              </div>
+            </form>
+
+            <!-- Query Loading Indicator -->
+            <div id="queryLoader" class="htmx-indicator mt-2">
+              <div class="flex items-center justify-center">
+                <span class="loading loading-dots loading-sm"></span>
+                <span class="ml-2 text-sm">Executing query...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Results Panel -->
+      <div class="border border-base-300 rounded-lg">
+        <div class="border-b border-base-300 p-4">
+          <div class="flex justify-between items-center">
+            <h2 id="resultsHeader" class="text-lg font-semibold">Loan Program Results</h2>
+            <div class="tooltip tooltip-left" data-tip="Click programs to select them. Selected programs provide context for queries. Press ESC to clear selection.">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="p-4">
+          <div id="resultsContent" class="space-y-4">
+            <div class="text-center text-base-content/60 py-8">
+              <p>Enter borrower information and click "Find Matching Programs" to see eligible loan options.</p>
+              <p class="text-xs mt-2 text-base-content/40">💡 Tip: Click program cards to select them for context-aware queries</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // VERSION: 1.0.0-WEB (No Electron, pure browser)
+    console.log('🔄 LoanPilot Web - Version 1.0.0');
+
+    // Program selection state (replaces Electron preload functions)
+    const selectedPrograms = new Set();
+
+    // App functions (browser-native implementation)
+    const appFunctions = {
+      toggleProgramSelection(programName, servicer) {
+        const programKey = `${servicer}::${programName}`;
+        const card = document.querySelector(`[data-program-key="${programKey}"]`);
+
+        if (!card) return;
+
+        const checkbox = card.querySelector('input[type="checkbox"]');
+
+        if (selectedPrograms.has(programKey)) {
+          selectedPrograms.delete(programKey);
+          card.classList.remove('ring-2', 'ring-primary');
+          if (checkbox) checkbox.checked = false;
+        } else {
+          selectedPrograms.add(programKey);
+          card.classList.add('ring-2', 'ring-primary');
+          if (checkbox) checkbox.checked = true;
+        }
+
+        this.updateSelectionIndicator();
+      },
+
+      updateSelectionIndicator() {
+        const header = document.getElementById('resultsHeader');
+        const count = selectedPrograms.size;
+
+        if (count > 0) {
+          const baseText = header.textContent.replace(/\s*\(\d+ selected\)/, '');
+          header.textContent = `${baseText} (${count} selected)`;
+        } else {
+          header.textContent = header.textContent.replace(/\s*\(\d+ selected\)/, '');
+        }
+      },
+
+      clearProgramSelection() {
+        selectedPrograms.clear();
+        document.querySelectorAll('[data-program-key]').forEach(card => {
+          card.classList.remove('ring-2', 'ring-primary');
+          const checkbox = card.querySelector('input[type="checkbox"]');
+          if (checkbox) checkbox.checked = false;
+        });
+        this.updateSelectionIndicator();
+      },
+
+      getSelectedPrograms() {
+        const programs = [];
+        selectedPrograms.forEach(key => {
+          const [servicer, ...nameParts] = key.split('::');
+          programs.push({
+            servicer: servicer,
+            programName: nameParts.join('::')
+          });
+        });
+        return programs;
+      },
+
+      clearBorrowerForm() {
+        document.getElementById('borrowerForm').reset();
+      },
+
+      loadSampleProfile() {
+        // Clear all previous program selections and results
+        this.clearProgramSelection();
+
+        // Clear results panel
+        document.getElementById('resultsContent').innerHTML = `
+          <div class="text-center text-base-content/60 py-8">
+            <p>Enter borrower information and click "Find Matching Programs" to see eligible loan options.</p>
+            <p class="text-xs mt-2 text-base-content/40">💡 Tip: Click program cards to select them for context-aware queries</p>
+          </div>
+        `;
+
+        // Reset results header
+        document.getElementById('resultsHeader').textContent = 'Loan Program Results';
+
+        // Array of diverse sample profiles
+        const sampleProfiles = [
+          {
+            creditScore: '680',
+            loanAmount: '500000',
+            ltv: '75',
+            dti: '42',
+            transactionType: 'Purchase',
+            occupancy: 'Owner Occupied'
+          },
+          {
+            creditScore: '720',
+            loanAmount: '750000',
+            ltv: '80',
+            dti: '38',
+            transactionType: 'Rate & Term',
+            occupancy: 'Owner Occupied'
+          },
+          {
+            creditScore: '640',
+            loanAmount: '350000',
+            ltv: '70',
+            dti: '45',
+            transactionType: 'Purchase',
+            occupancy: 'Investment'
+          },
+          {
+            creditScore: '760',
+            loanAmount: '1000000',
+            ltv: '85',
+            dti: '35',
+            transactionType: 'Cash Out',
+            occupancy: 'Owner Occupied'
+          },
+          {
+            creditScore: '700',
+            loanAmount: '600000',
+            ltv: '78',
+            dti: '40',
+            transactionType: 'Purchase',
+            occupancy: 'Second Home'
+          },
+          {
+            creditScore: '620',
+            loanAmount: '425000',
+            ltv: '72',
+            dti: '48',
+            transactionType: 'Rate & Term',
+            occupancy: 'Owner Occupied'
+          }
+        ];
+
+        // Randomly select a profile
+        const randomProfile = sampleProfiles[Math.floor(Math.random() * sampleProfiles.length)];
+
+        // Populate form with selected profile
+        const form = document.getElementById('borrowerForm');
+        form.creditScore.value = randomProfile.creditScore;
+        form.loanAmount.value = randomProfile.loanAmount;
+        form.ltv.value = randomProfile.ltv;
+        form.dti.value = randomProfile.dti;
+        form.transactionType.value = randomProfile.transactionType;
+        form.occupancy.value = randomProfile.occupancy;
+
+        // Trigger transaction type change event if Cash Out
+        if (randomProfile.transactionType === 'Cash Out') {
+          form.transactionType.dispatchEvent(new Event('change'));
+        }
+      },
+
+      runLoanMatching() {
+        const form = document.getElementById('borrowerForm');
+        const query = `match programs for ${form.creditScore.value} credit score, $${form.loanAmount.value} loan amount, ${form.ltv.value}% LTV, ${form.dti.value}% DTI, ${form.transactionType.value}, ${form.occupancy.value}`;
+
+        fetch('/api/query/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'HX-Request': 'true'
+          },
+          body: new URLSearchParams({ query })
+        })
+        .then(r => r.text())
+        .then(html => {
+          const div = document.createElement('div');
+          div.innerHTML = html;
+          const oob = div.querySelectorAll('[hx-swap-oob]');
+
+          oob.forEach((el) => {
+            const attr = el.getAttribute('hx-swap-oob');
+            const parts = attr.split(':');
+            if (parts.length === 2 && parts[1].startsWith('#')) {
+              const target = document.querySelector(parts[1]);
+              if (target) {
+                target.innerHTML = el.innerHTML;
+              }
+            }
+          });
+        });
+      },
+
+      clearQueryHistory() {
+        document.getElementById('queryHistory').innerHTML = `
+          <div class="alert alert-info text-xs">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <div class="font-semibold">Query Examples:</div>
+              <ul class="list-disc list-inside mt-1 text-xs">
+                <li>find all parameters for PRMG/Prime Connect</li>
+                <li>show borrower_credit_score in Prime programs</li>
+                <li>match programs for 680 credit score</li>
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+    };
+
+    // Make appFunctions globally available (for onclick handlers)
+    window.appFunctions = appFunctions;
+
+    // Convenience functions for onclick handlers
+    window.toggleProgramSelection = appFunctions.toggleProgramSelection.bind(appFunctions);
+    window.clearBorrowerForm = appFunctions.clearBorrowerForm.bind(appFunctions);
+    window.loadSampleProfile = appFunctions.loadSampleProfile.bind(appFunctions);
+    window.runLoanMatching = appFunctions.runLoanMatching.bind(appFunctions);
+    window.clearQueryHistory = appFunctions.clearQueryHistory.bind(appFunctions);
+
+    // ESC key handler to clear program selection
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        const selectedProgramsArray = appFunctions.getSelectedPrograms();
+        if (selectedProgramsArray.length > 0) {
+          appFunctions.clearProgramSelection();
+
+          // Show visual feedback
+          const header = document.getElementById('resultsHeader');
+          if (header) {
+            const originalText = header.textContent;
+            header.textContent = 'Selection Cleared';
+            header.classList.add('text-warning');
+
+            setTimeout(() => {
+              header.textContent = originalText.replace(/\d+ selected/, '').trim();
+              header.classList.remove('text-warning');
+            }, 1000);
+          }
+        }
+      }
+    });
+
+    // Show/hide cash out amount field based on transaction type
+    document.querySelector('select[name="transactionType"]').addEventListener('change', function(e) {
+      const cashOutField = document.getElementById('cashOutField');
+      if (e.target.value === 'Cash Out') {
+        cashOutField.style.display = 'block';
+      } else {
+        cashOutField.style.display = 'none';
+        cashOutField.querySelector('input').value = '';
+      }
+    });
+
+    // Auto-scroll query history
+    document.body.addEventListener('htmx:afterSettle', function(evt) {
+      if (evt.detail.target.id === 'queryHistory') {
+        const queryHistory = evt.detail.target;
+        requestAnimationFrame(() => {
+          queryHistory.scrollTop = queryHistory.scrollHeight;
+        });
+      }
+    });
+
+    // Intercept query form submission to add program context
+    document.getElementById('queryForm').addEventListener('htmx:configRequest', function(evt) {
+      const selectedProgramsArray = appFunctions.getSelectedPrograms();
+
+      if (selectedProgramsArray.length > 0) {
+        const programContext = selectedProgramsArray.map(p => p.programName).join(', ');
+        evt.detail.parameters.selectedPrograms = JSON.stringify(selectedProgramsArray);
+        evt.detail.parameters.programContext = programContext;
+
+        console.log('Query with program context:', programContext);
+      }
+    });
+
+    // Clear query form after submission
+    document.getElementById('queryForm').addEventListener('htmx:afterRequest', function(evt) {
+      if (evt.detail.successful) {
+        document.querySelector('[name=query]').value = '';
+      }
+    });
+
+    // Show parameter detail popup
+    window.showParamDetail = function(programName, paramType) {
+      const modal = document.getElementById('paramDetailModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalContent = document.getElementById('modalContent');
+
+      // Set title
+      const titleMap = {
+        'occupancy': 'Occupancy Requirements',
+        'transaction': 'Transaction Type',
+        'reserves': 'Reserve Requirements',
+        'documentation': 'Documentation Requirements',
+        'citizenship': 'Citizenship Requirements'
+      };
+      modalTitle.textContent = titleMap[paramType] || 'Parameter Details';
+
+      // Show loading state
+      modalContent.innerHTML = '<div class="flex items-center justify-center py-4"><span class="loading loading-spinner loading-md"></span></div>';
+      modal.checked = true;
+
+      // Fetch actual data from API
+      const servicer = programName.includes('LoanStream') ? 'LoanStream' : 'Prime';
+      fetch(`/api/program/parameter?programName=${encodeURIComponent(programName)}&servicer=${encodeURIComponent(servicer)}&paramType=${paramType}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            modalContent.innerHTML = `
+              <div class="space-y-3">
+                <div class="text-sm">
+                  <strong class="text-base-content/60">Program:</strong>
+                  <span class="font-semibold">${programName}</span>
+                </div>
+                <div class="divider my-2"></div>
+                <div class="text-sm whitespace-pre-wrap leading-relaxed">${data.value}</div>
+              </div>
+            `;
+          } else {
+            modalContent.innerHTML = `
+              <div class="alert alert-error">
+                <span>Error loading data: ${data.error || 'Unknown error'}</span>
+              </div>
+            `;
+          }
+        })
+        .catch(err => {
+          modalContent.innerHTML = `
+            <div class="alert alert-error">
+              <span>Failed to fetch data: ${err.message}</span>
+            </div>
+          `;
+        });
+    };
+  </script>
+
+  <!-- Modal for Parameter Details -->
+  <input type="checkbox" id="paramDetailModal" class="modal-toggle" />
+  <div class="modal">
+    <div class="modal-box">
+      <h3 id="modalTitle" class="font-bold text-lg mb-4"></h3>
+      <div id="modalContent" class="py-4"></div>
+      <div class="modal-action">
+        <label for="paramDetailModal" class="btn btn-sm">Close</label>
+      </div>
+    </div>
+    <label class="modal-backdrop" for="paramDetailModal"></label>
+  </div>
+</body>
+</html>
