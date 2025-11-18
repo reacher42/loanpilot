@@ -173,6 +173,135 @@ class DatabaseManager:
                 "error": str(e)
             }
 
+    def check_integrity(self) -> Dict:
+        """
+        Check database integrity for application readiness.
+
+        Validates:
+        - Database file exists
+        - Required tables exist (prime_v3, loanstream_v3)
+        - At least 1 program exists
+        - All 60 expected attributes present
+
+        Returns:
+            Dict with is_valid, errors, warnings, and details
+        """
+        errors = []
+        warnings = []
+        details = {}
+
+        try:
+            # Check 1: Database file exists
+            if not self.db_path.exists():
+                errors.append("Database file does not exist")
+                return {
+                    "is_valid": False,
+                    "errors": errors,
+                    "warnings": warnings,
+                    "details": {"exists": False}
+                }
+
+            details["exists"] = True
+
+            # Check 2: Can connect to database
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+            except Exception as e:
+                errors.append(f"Cannot connect to database: {str(e)}")
+                return {
+                    "is_valid": False,
+                    "errors": errors,
+                    "warnings": warnings,
+                    "details": details
+                }
+
+            # Check 3: Required tables exist
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            details["tables"] = tables
+
+            required_tables = ["prime_v3", "loanstream_v3"]
+            missing_tables = [t for t in required_tables if t not in tables]
+
+            if missing_tables:
+                errors.append(f"Missing required tables: {', '.join(missing_tables)}")
+
+            # Check 4: At least 1 program exists
+            program_counts = {"Prime": 0, "LoanStream": 0}
+
+            if "prime_v3" in tables:
+                cursor.execute("PRAGMA table_info(prime_v3)")
+                cols = cursor.fetchall()
+                # Subtract 4 metadata columns: Attribute Group, Attribute Name, Values, Borrower Facing
+                program_counts["Prime"] = max(0, len(cols) - 4)
+
+            if "loanstream_v3" in tables:
+                cursor.execute("PRAGMA table_info(loanstream_v3)")
+                cols = cursor.fetchall()
+                program_counts["LoanStream"] = max(0, len(cols) - 4)
+
+            total_programs = program_counts["Prime"] + program_counts["LoanStream"]
+            details["program_counts"] = program_counts
+            details["total_programs"] = total_programs
+
+            if total_programs == 0:
+                errors.append("No programs found in database (0 Prime + 0 LoanStream)")
+            elif total_programs < 5:
+                warnings.append(f"Only {total_programs} programs found (expected 16+)")
+
+            # Check 5: Expected attribute count (60 attributes)
+            expected_attributes = 60
+
+            if "prime_v3" in tables:
+                cursor.execute("SELECT COUNT(*) FROM prime_v3")
+                prime_attr_count = cursor.fetchone()[0]
+                details["prime_attributes"] = prime_attr_count
+
+                if prime_attr_count != expected_attributes:
+                    warnings.append(f"prime_v3 has {prime_attr_count} attributes (expected {expected_attributes})")
+
+            if "loanstream_v3" in tables:
+                cursor.execute("SELECT COUNT(*) FROM loanstream_v3")
+                loanstream_attr_count = cursor.fetchone()[0]
+                details["loanstream_attributes"] = loanstream_attr_count
+
+                if loanstream_attr_count != expected_attributes:
+                    warnings.append(f"loanstream_v3 has {loanstream_attr_count} attributes (expected {expected_attributes})")
+
+            # Check 6: Attribute Name column exists and has data
+            if "prime_v3" in tables:
+                try:
+                    cursor.execute('SELECT COUNT(*) FROM prime_v3 WHERE "Attribute Name" IS NOT NULL AND "Attribute Name" != ""')
+                    valid_attrs = cursor.fetchone()[0]
+                    if valid_attrs == 0:
+                        errors.append("prime_v3 has no valid attribute names")
+                except Exception:
+                    errors.append("prime_v3 missing 'Attribute Name' column")
+
+            conn.close()
+
+            # Determine validity
+            is_valid = len(errors) == 0
+
+            return {
+                "is_valid": is_valid,
+                "errors": errors,
+                "warnings": warnings,
+                "details": details
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Integrity check failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "is_valid": False,
+                "errors": [f"Integrity check error: {str(e)}"],
+                "warnings": warnings,
+                "details": details
+            }
+
     def drop_all_tables(self) -> Dict:
         """Drop all tables from the database"""
         try:

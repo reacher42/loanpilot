@@ -354,6 +354,43 @@ async def get_scripts(request: Request):
 
 # ========== DATABASE MANAGEMENT ENDPOINTS ==========
 
+@app.get("/api/database/integrity")
+async def check_database_integrity():
+    """
+    Check database integrity for application readiness.
+    Returns validation status, errors, warnings, and details.
+    """
+    try:
+        manager = database_manager.DatabaseManager()
+        integrity = manager.check_integrity()
+
+        # Log integrity check results
+        if integrity["is_valid"]:
+            logger.info("✅ Database integrity check passed")
+        else:
+            logger.warning(f"⚠️ Database integrity check failed: {integrity['errors']}")
+
+        return JSONResponse(content={
+            "success": True,
+            "integrity": integrity
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error checking database integrity: {e}", exc_info=True)
+        return JSONResponse(
+            content={
+                "success": False,
+                "integrity": {
+                    "is_valid": False,
+                    "errors": [f"Integrity check failed: {str(e)}"],
+                    "warnings": [],
+                    "details": {}
+                }
+            },
+            status_code=500
+        )
+
+
 @app.get("/api/database/info")
 async def get_database_info():
     """Get current database information (tables, programs, size)"""

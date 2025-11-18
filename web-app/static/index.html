@@ -26,6 +26,57 @@
   </style>
 </head>
 <body class="bg-base-100">
+  <!-- Database Integrity Overlay (hidden by default) -->
+  <div id="integrityOverlay" class="hidden fixed inset-0 bg-base-100 bg-opacity-95 z-50 flex items-center justify-center">
+    <div class="max-w-2xl mx-auto p-8">
+      <div class="card bg-error text-error-content shadow-xl">
+        <div class="card-body">
+          <div class="flex items-center gap-4 mb-4">
+            <span class="material-icons-outlined text-6xl">error</span>
+            <div>
+              <h2 class="card-title text-2xl">Database Error</h2>
+              <p class="text-sm opacity-80">The application cannot start due to database issues</p>
+            </div>
+          </div>
+
+          <div id="integrityErrors" class="space-y-2"></div>
+
+          <div id="integrityWarnings" class="mt-4 hidden"></div>
+
+          <div class="card-actions justify-end mt-6">
+            <button class="btn btn-ghost" onclick="location.reload()">
+              <span class="material-icons-outlined text-sm">refresh</span>
+              Retry
+            </button>
+            <button class="btn btn-primary" onclick="showResetFromError()">
+              <span class="material-icons-outlined text-sm">restart_alt</span>
+              Reset Database
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Details Section -->
+      <div id="integrityDetails" class="mt-4 collapse collapse-arrow bg-base-200">
+        <input type="checkbox" />
+        <div class="collapse-title text-sm font-medium">
+          Show Technical Details
+        </div>
+        <div class="collapse-content">
+          <pre id="integrityDetailsContent" class="text-xs overflow-auto"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay (shown initially) -->
+  <div id="loadingOverlay" class="fixed inset-0 bg-base-100 z-40 flex items-center justify-center">
+    <div class="text-center">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="mt-4 text-base-content/60">Checking database...</p>
+    </div>
+  </div>
+
   <!-- Header -->
   <div class="border-b border-base-300 px-6 py-4">
     <div class="flex items-center justify-between">
@@ -836,6 +887,124 @@
   </dialog>
 
   <script>
+    // ========== Database Integrity Check (runs on page load) ==========
+
+    let databaseIsValid = false;
+
+    async function checkDatabaseIntegrity() {
+      try {
+        const response = await fetch('/api/database/integrity');
+        const data = await response.json();
+
+        if (data.success && data.integrity.is_valid) {
+          // Database is valid - hide loading, show app
+          databaseIsValid = true;
+          document.getElementById('loadingOverlay').classList.add('hidden');
+          console.log('✅ Database integrity check passed');
+          return true;
+        } else {
+          // Database has errors - show error overlay
+          databaseIsValid = false;
+          showIntegrityError(data.integrity);
+          return false;
+        }
+      } catch (error) {
+        console.error('Failed to check database integrity:', error);
+        databaseIsValid = false;
+        showIntegrityError({
+          is_valid: false,
+          errors: ['Failed to connect to server: ' + error.message],
+          warnings: [],
+          details: {}
+        });
+        return false;
+      }
+    }
+
+    function showIntegrityError(integrity) {
+      // Hide loading overlay
+      document.getElementById('loadingOverlay').classList.add('hidden');
+
+      // Show error overlay
+      document.getElementById('integrityOverlay').classList.remove('hidden');
+
+      // Display errors
+      const errorsDiv = document.getElementById('integrityErrors');
+      if (integrity.errors && integrity.errors.length > 0) {
+        errorsDiv.innerHTML = `
+          <div class="alert alert-error bg-error-content text-error">
+            <div class="flex flex-col gap-2 w-full">
+              <p class="font-bold">Critical Errors:</p>
+              <ul class="list-disc list-inside">
+                ${integrity.errors.map(err => `<li class="text-sm">${err}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+
+      // Display warnings (if any)
+      const warningsDiv = document.getElementById('integrityWarnings');
+      if (integrity.warnings && integrity.warnings.length > 0) {
+        warningsDiv.classList.remove('hidden');
+        warningsDiv.innerHTML = `
+          <div class="alert alert-warning bg-warning-content text-warning">
+            <div class="flex flex-col gap-2 w-full">
+              <p class="font-bold">Warnings:</p>
+              <ul class="list-disc list-inside">
+                ${integrity.warnings.map(warn => `<li class="text-sm">${warn}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+
+      // Display technical details
+      document.getElementById('integrityDetailsContent').textContent =
+        JSON.stringify(integrity.details, null, 2);
+
+      // Disable all form controls on the page
+      disableAllControls();
+
+      console.error('❌ Database integrity check failed:', integrity.errors);
+    }
+
+    function disableAllControls() {
+      // Disable all buttons except those in the error overlay
+      const buttons = document.querySelectorAll('button:not(#integrityOverlay button):not(#integrityDetails button)');
+      buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.classList.add('btn-disabled');
+      });
+
+      // Disable all inputs
+      const inputs = document.querySelectorAll('input:not(#integrityOverlay input), select, textarea');
+      inputs.forEach(input => {
+        input.disabled = true;
+      });
+
+      // Add overlay to main content
+      const mainContent = document.querySelector('body > div:not(#integrityOverlay):not(#loadingOverlay)');
+      if (mainContent) {
+        mainContent.style.opacity = '0.5';
+        mainContent.style.pointerEvents = 'none';
+      }
+    }
+
+    function showResetFromError() {
+      // Hide error overlay
+      document.getElementById('integrityOverlay').classList.add('hidden');
+
+      // Show reset modal
+      showResetConfirmation();
+    }
+
+    // Run integrity check on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('🔍 Running database integrity check...');
+      checkDatabaseIntegrity();
+    });
+
     // ========== Database Management Functions ==========
 
     async function showDatabaseInfo() {
