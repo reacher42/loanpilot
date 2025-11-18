@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import from current directory
 try:
-    from . import models, query_engine, parsers, text_formatter, program_uploader, database_manager
+    from . import models, query_engine, parsers, text_formatter, program_uploader, database_manager, license_validator
 except ImportError:
     # Fallback for direct execution
     import models
@@ -32,6 +32,7 @@ except ImportError:
     import text_formatter
     import program_uploader
     import database_manager
+    import license_validator
 
 
 # Configure logging
@@ -58,6 +59,39 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
+# License check middleware
+@app.middleware("http")
+async def license_check_middleware(request: Request, call_next):
+    """Check license on every request"""
+    # Skip license check for health endpoint
+    if request.url.path == "/api/health":
+        return await call_next(request)
+
+    # Check license
+    is_valid, message = license_validator.check_license()
+
+    if not is_valid:
+        # Return HTML for browser requests, JSON for API requests
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "License Expired",
+                    "message": message,
+                    "support_email": "support@loanpilot.com",
+                    "support_phone": "1-800-LOAN-PILOT"
+                }
+            )
+        else:
+            # Return HTML page for web interface
+            html_content = license_validator.get_license_expired_html(message)
+            return HTMLResponse(content=html_content, status_code=403)
+
+    # Continue processing request
+    response = await call_next(request)
+    return response
+
+
 # Add middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
@@ -74,6 +108,29 @@ app.add_middleware(
 async def startup_event():
     """Initialize services on startup."""
     logger.info("🚀 Starting LoanPilot FastAPI application...")
+
+    # Check license first
+    try:
+        is_valid, message = license_validator.check_license()
+        if not is_valid:
+            logger.error(f"❌ LICENSE ERROR: {message}")
+            logger.error("=" * 70)
+            logger.error("  LoanPilot cannot start - license validation failed")
+            logger.error("  Contact support@loanpilot.com to renew your license")
+            logger.error("=" * 70)
+            raise RuntimeError(f"License validation failed: {message}")
+
+        if "⚠️" in message:
+            logger.warning(f"⚠️  LICENSE WARNING: {message}")
+        else:
+            logger.info(f"✓ License validated: {message}")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.error(f"❌ License validation error: {e}")
+        raise RuntimeError(f"License validation failed: {e}")
+
+    # Initialize query engine
     try:
         engine = query_engine.get_query_engine()
         logger.info("✓ Query engine initialized successfully")

@@ -1,0 +1,101 @@
+# ============================================
+# LoanPilot Production Dockerfile
+# Secure build with bytecode compilation and source removal
+# ============================================
+
+# ============================================
+# Stage 1: Builder - Compile and prepare
+# ============================================
+FROM python:3.11-slim as builder
+
+WORKDIR /build
+
+# Install build dependencies and python-minifier
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt && \
+    pip install --no-cache-dir --user astor
+
+# Copy application source (excluding via .dockerignore)
+COPY web-app/ ./web-app/
+COPY src/ ./src/
+COPY data/v3/*.tsv ./data/v3/
+
+# Strip docstrings and comments using AST transformer
+COPY build/prepare_sources.py ./
+RUN python3 prepare_sources.py web-app /app/web-app && \
+    python3 prepare_sources.py src /app/src && \
+    cp -r data /app/
+
+# Compile Python files to bytecode (optimized)
+RUN python3 -OO -m compileall -b /app/web-app /app/src
+
+# Remove source .py files, keep only .pyc
+RUN find /app -type f -name "*.py" ! -name "__init__.py" -delete && \
+    find /app -type d -name "__pycache__" -exec sh -c 'mv "$1"/*.pyc "$(dirname "$1")/" 2>/dev/null || true' _ {} \; && \
+    find /app -type d -name "__pycache__" -delete
+
+# ============================================
+# Stage 2: Runtime - Minimal final image
+# ============================================
+FROM python:3.11-slim
+
+LABEL maintainer="LoanPilot"
+LABEL version="1.0.0"
+LABEL description="LoanPilot Loan Program Matching System"
+
+WORKDIR /app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* /var/tmp/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy compiled application (bytecode only, no source)
+COPY --from=builder /app/web-app /app/web-app
+COPY --from=builder /app/src /app/src
+COPY --from=builder /app/data /app/data
+
+# Create runtime directories
+RUN mkdir -p /app/backups \
+    && mkdir -p /app/web-app/logs \
+    && chmod 755 /app/backups /app/web-app/logs
+
+# Set environment variables
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/app:/app/web-app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONOPTIMIZE=2
+
+# License configuration (set during build for specific customer)
+ARG LICENSE_TOKEN
+ARG LICENSE_EXPIRY
+ARG CUSTOMER_ID
+ENV LICENSE_TOKEN=${LICENSE_TOKEN}
+ENV LICENSE_EXPIRY=${LICENSE_EXPIRY:-2025-12-31}
+ENV CUSTOMER_ID=${CUSTOMER_ID:-DEMO}
+
+# Add non-root user for security
+RUN useradd -m -u 1000 loanpilot && \
+    chown -R loanpilot:loanpilot /app
+USER loanpilot
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# Run application
+CMD ["python3", "-m", "uvicorn", "web-app.main:app", "--host", "0.0.0.0", "--port", "8000"]

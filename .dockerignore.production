@@ -1,0 +1,121 @@
+# ==================================
+# Production .dockerignore
+# Aggressively exclude unnecessary files
+# ==================================
+
+# Documentation (ALL)
+*.md
+docs/
+screenshots/
+examples/
+
+# Utility scripts (not needed in runtime)
+utils/
+validate_docker_setup.sh
+docker-start.sh
+
+# Test files
+tests/
+test/
+*_test.py
+test_*.py
+**/*_test.py
+**/test_*.py
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+.github/
+.gitlab-ci.yml
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+
+# Logs and databases (will be volume-mounted)
+*.log
+logs/
+web-app/logs/
+*.db
+backups/
+*.db.backup
+loanpilot_backup_*.db
+
+# Docker files (not needed inside image)
+Dockerfile
+Dockerfile.*
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Build artifacts
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Temp files
+tmp/
+temp/
+*.tmp
+.scratchpad*
+._*
+
+# Large data files (only include required TSV)
+*.xlsx
+*.csv
+*.xls
+!data/v3/*.tsv
+
+# Development tools
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CI/CD
+.travis.yml
+.circleci/
+azure-pipelines.yml
+Jenkinsfile
+
+# Distribution packages (keep only source)
+loanpilot-*.tar.gz
+loanpilot-*.tar
+distribution/
+
+# Keep only essential files:
+# - web-app/*.py (application code)
+# - src/*.py (source code)
+# - data/v3/*.tsv (sample data)
+# - requirements.txt (dependencies)
+# - build/prepare_sources.py (for build process)

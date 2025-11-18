@@ -4,3 +4,5 @@ anthropic>=0.3.0
 python-dotenv>=1.0.0
 pandas>=2.0.0
 openpyxl>=3.1.0
+python-multipart>=0.0.6
+astor>=0.8.1
