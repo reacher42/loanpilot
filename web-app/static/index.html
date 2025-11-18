@@ -37,6 +37,10 @@
         <button class="btn btn-ghost btn-sm" onclick="clearBorrowerForm()">Clear</button>
         <button class="btn btn-outline btn-sm" onclick="loadSampleProfile()">Load Sample</button>
         <button class="btn btn-primary btn-sm" onclick="runLoanMatching()">Match</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('uploadModal').showModal()">
+          <span class="material-icons-outlined text-sm">upload_file</span>
+          Upload Program
+        </button>
       </div>
     </div>
   </div>
@@ -585,5 +589,319 @@
     </div>
     <label class="modal-backdrop" for="paramDetailModal"></label>
   </div>
+
+  <!-- Program Upload Modal -->
+  <dialog id="uploadModal" class="modal">
+    <div class="modal-box w-11/12 max-w-2xl">
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+      </form>
+
+      <h3 class="font-bold text-lg mb-4">Upload New Loan Program</h3>
+
+      <div class="space-y-4">
+        <!-- Instructions -->
+        <div class="alert alert-info">
+          <span class="material-icons-outlined">info</span>
+          <div class="text-sm">
+            <p><strong>Upload a TSV file</strong> containing exactly one new program column with 60 attribute rows.</p>
+            <p class="mt-1">The file must match the existing attribute structure (Attribute Group, Attribute Name, Values, Borrower Facing).</p>
+          </div>
+        </div>
+
+        <!-- File Upload -->
+        <div class="form-control w-full">
+          <label class="label">
+            <span class="label-text">Select TSV File</span>
+          </label>
+          <input type="file"
+                 id="tsvFile"
+                 accept=".tsv,.txt"
+                 class="file-input file-input-bordered w-full"
+                 onchange="handleFileSelect(event)" />
+          <label class="label">
+            <span class="label-text-alt">Accepted formats: .tsv, .txt</span>
+          </label>
+        </div>
+
+        <!-- Validation Results -->
+        <div id="validationResults" class="hidden">
+          <!-- Success -->
+          <div id="validationSuccess" class="alert alert-success hidden">
+            <span class="material-icons-outlined">check_circle</span>
+            <div class="text-sm">
+              <p><strong>Validation Passed!</strong></p>
+              <p id="validationSummary" class="mt-1"></p>
+            </div>
+          </div>
+
+          <!-- Errors -->
+          <div id="validationErrors" class="alert alert-error hidden">
+            <span class="material-icons-outlined">error</span>
+            <div class="text-sm">
+              <p><strong>Validation Failed</strong></p>
+              <ul id="errorList" class="list-disc list-inside mt-1"></ul>
+            </div>
+          </div>
+
+          <!-- Warnings -->
+          <div id="validationWarnings" class="alert alert-warning hidden">
+            <span class="material-icons-outlined">warning</span>
+            <div class="text-sm">
+              <p><strong>Warnings</strong></p>
+              <ul id="warningList" class="list-disc list-inside mt-1"></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Import Controls -->
+        <div id="importControls" class="hidden">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">Program Name</span>
+            </label>
+            <input type="text"
+                   id="programName"
+                   class="input input-bordered w-full"
+                   readonly />
+          </div>
+
+          <div class="form-control mt-3">
+            <label class="label">
+              <span class="label-text">Servicer</span>
+            </label>
+            <input type="text"
+                   id="servicerName"
+                   class="input input-bordered w-full"
+                   readonly />
+          </div>
+        </div>
+
+        <!-- Import Status -->
+        <div id="importStatus" class="hidden"></div>
+
+        <!-- Actions -->
+        <div class="modal-action">
+          <button type="button"
+                  class="btn btn-ghost"
+                  onclick="closeUploadModal()">
+            Cancel
+          </button>
+          <button type="button"
+                  id="importBtn"
+                  class="btn btn-primary hidden"
+                  onclick="importProgram()">
+            <span class="material-icons-outlined text-sm">upload</span>
+            Import Program
+          </button>
+        </div>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
+
+  <script>
+    // Upload Modal Functions
+    let currentFileContent = null;
+    let currentValidation = null;
+
+    async function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // Reset UI
+      document.getElementById('validationResults').classList.add('hidden');
+      document.getElementById('importControls').classList.add('hidden');
+      document.getElementById('importBtn').classList.add('hidden');
+      document.getElementById('importStatus').classList.add('hidden');
+
+      // Show loading
+      const resultsDiv = document.getElementById('validationResults');
+      resultsDiv.classList.remove('hidden');
+      resultsDiv.innerHTML = '<div class="flex items-center justify-center py-4"><span class="loading loading-spinner loading-md"></span><span class="ml-2">Validating...</span></div>';
+
+      try {
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Validate file
+        const response = await fetch('/api/programs/validate', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Validation request failed');
+        }
+
+        currentValidation = data.validation;
+        currentFileContent = file;
+
+        displayValidationResults(data.validation);
+
+      } catch (error) {
+        console.error('Validation error:', error);
+        resultsDiv.innerHTML = `
+          <div class="alert alert-error">
+            <span class="material-icons-outlined">error</span>
+            <span>Failed to validate file: ${error.message}</span>
+          </div>
+        `;
+      }
+    }
+
+    function displayValidationResults(validation) {
+      const resultsDiv = document.getElementById('validationResults');
+      const successDiv = document.getElementById('validationSuccess');
+      const errorsDiv = document.getElementById('validationErrors');
+      const warningsDiv = document.getElementById('validationWarnings');
+      const importControls = document.getElementById('importControls');
+      const importBtn = document.getElementById('importBtn');
+
+      // Clear previous results
+      resultsDiv.innerHTML = '';
+      resultsDiv.classList.add('hidden');
+      successDiv.classList.add('hidden');
+      errorsDiv.classList.add('hidden');
+      warningsDiv.classList.add('hidden');
+      importControls.classList.add('hidden');
+      importBtn.classList.add('hidden');
+
+      // Show validation results
+      resultsDiv.classList.remove('hidden');
+      resultsDiv.appendChild(successDiv);
+      resultsDiv.appendChild(errorsDiv);
+      resultsDiv.appendChild(warningsDiv);
+
+      if (validation.is_valid) {
+        // Show success
+        successDiv.classList.remove('hidden');
+        document.getElementById('validationSummary').textContent =
+          `Program: ${validation.program_name} | Servicer: ${validation.servicer} | Rows: ${validation.row_count} | Attributes Matched: ${validation.attributes_matched}/60`;
+
+        // Show import controls
+        importControls.classList.remove('hidden');
+        document.getElementById('programName').value = validation.program_name;
+        document.getElementById('servicerName').value = validation.servicer;
+
+        // Show import button
+        importBtn.classList.remove('hidden');
+
+        // Show warnings if any
+        if (validation.warnings && validation.warnings.length > 0) {
+          warningsDiv.classList.remove('hidden');
+          const warningList = document.getElementById('warningList');
+          warningList.innerHTML = validation.warnings.map(w => `<li>${w}</li>`).join('');
+        }
+      } else {
+        // Show errors
+        errorsDiv.classList.remove('hidden');
+        const errorList = document.getElementById('errorList');
+        errorList.innerHTML = validation.errors.map(e => `<li>${e}</li>`).join('');
+      }
+    }
+
+    async function importProgram() {
+      if (!currentFileContent || !currentValidation || !currentValidation.is_valid) {
+        alert('Please validate a file first');
+        return;
+      }
+
+      const importBtn = document.getElementById('importBtn');
+      const statusDiv = document.getElementById('importStatus');
+
+      // Disable button and show loading
+      importBtn.disabled = true;
+      importBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Importing...';
+
+      statusDiv.classList.remove('hidden');
+      statusDiv.innerHTML = '<div class="flex items-center justify-center py-2"><span class="loading loading-spinner loading-md"></span><span class="ml-2">Importing program into database...</span></div>';
+
+      try {
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', currentFileContent);
+        formData.append('program_name', currentValidation.program_name);
+        formData.append('servicer', currentValidation.servicer);
+
+        // Import file
+        const response = await fetch('/api/programs/import', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          statusDiv.innerHTML = `
+            <div class="alert alert-success">
+              <span class="material-icons-outlined">check_circle</span>
+              <div>
+                <p><strong>Import Successful!</strong></p>
+                <p class="text-sm mt-1">${data.message}</p>
+                <p class="text-xs mt-1">Rows updated: ${data.rows_updated}</p>
+              </div>
+            </div>
+          `;
+
+          // Hide import button
+          importBtn.classList.add('hidden');
+
+          // Auto-close after 2 seconds
+          setTimeout(() => {
+            closeUploadModal();
+            // Reload page to show new program
+            window.location.reload();
+          }, 2000);
+
+        } else {
+          statusDiv.innerHTML = `
+            <div class="alert alert-error">
+              <span class="material-icons-outlined">error</span>
+              <span>${data.error || 'Import failed'}</span>
+            </div>
+          `;
+
+          // Re-enable button
+          importBtn.disabled = false;
+          importBtn.innerHTML = '<span class="material-icons-outlined text-sm">upload</span> Import Program';
+        }
+
+      } catch (error) {
+        console.error('Import error:', error);
+        statusDiv.innerHTML = `
+          <div class="alert alert-error">
+            <span class="material-icons-outlined">error</span>
+            <span>Failed to import: ${error.message}</span>
+          </div>
+        `;
+
+        // Re-enable button
+        importBtn.disabled = false;
+        importBtn.innerHTML = '<span class="material-icons-outlined text-sm">upload</span> Import Program';
+      }
+    }
+
+    function closeUploadModal() {
+      document.getElementById('uploadModal').close();
+
+      // Reset form after closing
+      setTimeout(() => {
+        document.getElementById('tsvFile').value = '';
+        document.getElementById('validationResults').classList.add('hidden');
+        document.getElementById('importControls').classList.add('hidden');
+        document.getElementById('importBtn').classList.add('hidden');
+        document.getElementById('importStatus').classList.add('hidden');
+        currentFileContent = null;
+        currentValidation = null;
+      }, 300);
+    }
+  </script>
+
 </body>
 </html>

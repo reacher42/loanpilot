@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Request, Form, HTTPException, status
+from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,13 +23,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import from current directory
 try:
-    from . import models, query_engine, parsers, text_formatter
+    from . import models, query_engine, parsers, text_formatter, program_uploader
 except ImportError:
     # Fallback for direct execution
     import models
     import query_engine
     import parsers
     import text_formatter
+    import program_uploader
 
 
 # Configure logging
@@ -348,6 +349,142 @@ async def get_scripts(request: Request):
             )
 
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== PROGRAM UPLOAD ENDPOINTS ==========
+
+@app.get("/api/programs/servicers")
+async def get_servicers():
+    """Get list of available servicers (Prime, LoanStream)"""
+    try:
+        uploader = program_uploader.ProgramUploader()
+        servicers = uploader.get_servicers()
+
+        return JSONResponse(content={
+            "success": True,
+            "servicers": servicers
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching servicers: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/programs/validate")
+async def validate_program_tsv(file: UploadFile = File(...)):
+    """
+    Validate uploaded TSV file for new program.
+    Checks structure, row count, attribute matching, etc.
+    """
+    try:
+        logger.info(f"📤 Validating TSV file: {file.filename}")
+
+        # Read file content
+        content = await file.read()
+
+        # Validate
+        uploader = program_uploader.ProgramUploader()
+        result = uploader.validate_tsv(content, file.filename)
+
+        logger.info(f"✅ Validation complete: valid={result.is_valid}, program={result.program_name}")
+
+        return JSONResponse(content={
+            "success": True,
+            "validation": {
+                "is_valid": result.is_valid,
+                "errors": result.errors,
+                "warnings": result.warnings,
+                "program_name": result.program_name,
+                "servicer": result.servicer,
+                "row_count": result.row_count,
+                "attributes_matched": result.attributes_matched
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Validation error: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/programs/import")
+async def import_program(
+    file: UploadFile = File(...),
+    program_name: str = Form(...),
+    servicer: str = Form(...)
+):
+    """
+    Import validated TSV file into database.
+    Adds new program column to appropriate table.
+    """
+    try:
+        logger.info(f"📥 Importing program: {program_name} ({servicer})")
+
+        # Read file content
+        content = await file.read()
+
+        # Validate first
+        uploader = program_uploader.ProgramUploader()
+        validation = uploader.validate_tsv(content, file.filename)
+
+        if not validation.is_valid:
+            logger.warning(f"⚠️ Import rejected - validation failed: {validation.errors}")
+            return JSONResponse(
+                content={
+                    "success": False,
+                    "error": "Validation failed",
+                    "validation_errors": validation.errors
+                },
+                status_code=400
+            )
+
+        # Import
+        import_result = uploader.import_program(content, program_name, servicer)
+
+        if import_result["success"]:
+            logger.info(f"✅ Program imported successfully: {program_name}")
+        else:
+            logger.error(f"❌ Import failed: {import_result.get('error')}")
+
+        return JSONResponse(content=import_result)
+
+    except Exception as e:
+        logger.error(f"❌ Import error: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/programs/count")
+async def get_program_counts():
+    """Get count of programs for each servicer"""
+    try:
+        uploader = program_uploader.ProgramUploader()
+
+        prime_count = uploader.get_program_count("Prime")
+        loanstream_count = uploader.get_program_count("LoanStream")
+
+        return JSONResponse(content={
+            "success": True,
+            "counts": {
+                "Prime": prime_count,
+                "LoanStream": loanstream_count,
+                "total": prime_count + loanstream_count
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching program counts: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
 
 
 # Serve static files (CSS, JS, images)
