@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import from current directory
 try:
-    from . import models, query_engine, parsers, text_formatter, program_uploader
+    from . import models, query_engine, parsers, text_formatter, program_uploader, database_manager
 except ImportError:
     # Fallback for direct execution
     import models
@@ -31,6 +31,7 @@ except ImportError:
     import parsers
     import text_formatter
     import program_uploader
+    import database_manager
 
 
 # Configure logging
@@ -349,6 +350,125 @@ async def get_scripts(request: Request):
             )
 
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== DATABASE MANAGEMENT ENDPOINTS ==========
+
+@app.get("/api/database/info")
+async def get_database_info():
+    """Get current database information (tables, programs, size)"""
+    try:
+        manager = database_manager.DatabaseManager()
+        info = manager.get_database_info()
+
+        return JSONResponse(content={
+            "success": True,
+            "database": info
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error getting database info: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/database/backups")
+async def list_database_backups():
+    """List all available database backups"""
+    try:
+        manager = database_manager.DatabaseManager()
+        backups = manager.list_backups()
+
+        return JSONResponse(content={
+            "success": True,
+            "backups": backups,
+            "count": len(backups)
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error listing backups: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/database/backup")
+async def create_database_backup():
+    """Create a backup of the current database"""
+    try:
+        logger.info("📦 Creating database backup...")
+
+        manager = database_manager.DatabaseManager()
+        result = manager.create_backup()
+
+        if result["success"]:
+            logger.info(f"✅ Backup created: {result['backup_name']}")
+        else:
+            logger.error(f"❌ Backup failed: {result.get('error')}")
+
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        logger.error(f"❌ Backup error: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/database/restore")
+async def restore_database_backup(backup_name: str = Form(...)):
+    """Restore database from a backup file"""
+    try:
+        logger.info(f"🔄 Restoring database from: {backup_name}")
+
+        manager = database_manager.DatabaseManager()
+        result = manager.restore_backup(backup_name)
+
+        if result["success"]:
+            logger.info(f"✅ Database restored from {backup_name}")
+        else:
+            logger.error(f"❌ Restore failed: {result.get('error')}")
+
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        logger.error(f"❌ Restore error: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/database/reset")
+async def reset_database(create_backup: bool = Form(True)):
+    """
+    Reset database: drop all tables and repopulate from TSV.
+    Creates a backup by default before resetting.
+    """
+    try:
+        logger.info("🔄 Database reset requested...")
+        logger.info(f"   Create backup: {create_backup}")
+
+        manager = database_manager.DatabaseManager()
+        result = manager.reset_database(create_backup=create_backup)
+
+        if result["success"]:
+            logger.info("✅ Database reset completed successfully")
+        else:
+            logger.error(f"❌ Database reset failed: {result.get('error')}")
+
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        logger.error(f"❌ Reset error: {e}", exc_info=True)
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
 
 
 # ========== PROGRAM UPLOAD ENDPOINTS ==========
