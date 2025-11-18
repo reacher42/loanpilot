@@ -14,7 +14,22 @@ LoanPilot is a comprehensive system for managing, querying, and matching loan pr
 
 ## Quick Start
 
-### Setup
+### 🐳 Docker Deployment (Recommended)
+
+**Deploy in 3 commands:**
+
+```bash
+git clone https://github.com/reacher42/loanpilot.git
+cd loanpilot
+cp .env.example .env  # Add your ANTHROPIC_API_KEY
+docker-compose up -d
+```
+
+Access: **http://localhost:8000**
+
+📚 **Full Guide**: [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md)
+
+### 🔧 Manual Setup
 
 ```bash
 # Install dependencies
@@ -636,6 +651,59 @@ Python Bridge (env var) → Parser (globals merge) → Script Execution (filtere
 **Database Scripts**: 5/5 passed
 **Parser Accuracy**: 100% (5/5 queries matched correctly)
 **Context-Aware Flows**: Both flows verified working
+
+## Deployment Options
+
+### 🐳 Docker (Recommended for Production)
+
+**Best for**: Cloud deployments, consistent environments, easy updates
+
+- One-command deployment with `docker-compose`
+- Automatic dependency management
+- Data persistence with volumes
+- Health checks and auto-restart
+- Easy scaling and updates
+
+**Guides**:
+- [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) - Quick start guide
+- [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md) - Comprehensive deployment guide
+
+### ☁️ AWS EC2 (Direct Installation)
+
+**Best for**: Custom configurations, existing infrastructure
+
+- Direct Python installation
+- Manual dependency management
+- Full control over environment
+
+**Guide**: [loanpilot_aws_deployment.md](loanpilot_aws_deployment.md)
+
+### 💻 Local Development
+
+**Best for**: Development and testing
+
+```bash
+pip install -r requirements.txt
+python utils/convert_v3_to_sqlite.py
+cd web-app
+PYTHONPATH='..:.' python3 -m uvicorn main:app --reload
+```
+
+## Documentation
+
+### User Guides
+- [PROGRAM_UPLOAD_GUIDE.md](PROGRAM_UPLOAD_GUIDE.md) - Upload new loan programs
+- [DATABASE_RESET_GUIDE.md](DATABASE_RESET_GUIDE.md) - Database management and backups
+
+### Technical Documentation
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - Detailed architecture
+- [loanpilot_aws_deployment.md](loanpilot_aws_deployment.md) - AWS deployment guide
+- [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md) - Docker deployment guide
+
+### Design Documents
+- [docs/design.md](docs/design.md) - System design
+- [docs/parameter_analysis.md](docs/parameter_analysis.md) - Parameter analysis
+- [docs/ba_parameter_guide.md](docs/ba_parameter_guide.md) - Business analyst guide
 
 ## License
 
