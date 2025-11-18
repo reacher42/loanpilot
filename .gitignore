@@ -1,7 +1,10 @@
 # Environment variables (contains API keys)
 .env
-*.env
-.env.*
+.env.local
+.env.*.local
+
+# Keep .env.example for reference
+!.env.example
 
 # Database (optional - can regenerate from data)
 loanpilot.db
@@ -37,3 +40,12 @@ Thumbs.db
 
 # Node modules (if electron app included)
 node_modules/
+
+# Docker
+*.dockerignore.backup
+docker-compose.override.yml
+
+# Database backups
+backups/
+*.db.backup
+loanpilot_backup_*.db
